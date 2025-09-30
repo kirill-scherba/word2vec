@@ -1,3 +1,3 @@
-module github.com/fogfish/word2vec
+module github.com/kirill-scherba/word2vec
 
-go 1.21.3
+go 1.25.1
