@@ -53,12 +53,13 @@ Read more in the blog post [Blazing Fast Text Embedding With Word2Vec in Golang 
 
 - [Inspirations](#inspirations)
 - [Getting started](#getting-started)
-  - [Pre-requisites](#pre-requisites)
 - [Usage Command line utility](#usage-command-line-utility)
   - [Training](#training)
   - [Embeddings](#embeddings)
   - [Lookup nearest](#lookup-nearest)
 - [Usage Golang module](#usage-golang-module)
+  - [1. Prerequisites](#1-prerequisites)
+  - [2. Installation and Build](#2-installation-and-build)
   - [Embeddings](#embeddings-1)
   - [Lookup nearest](#lookup-nearest-1)
 - [How To Contribute](#how-to-contribute)
@@ -67,31 +68,14 @@ Read more in the blog post [Blazing Fast Text Embedding With Word2Vec in Golang 
 - [License](#license)
 - [References](#references)
 
-
 The project offers a solution as both a Golang module and a simple command-line application. Use the command-line tool to train word2vec models and the Golang module to compute embeddings and find similar words within your application. 
-
-### Pre-requisites
-
-A static linked library is required for the CGO bridge to integrate with Max Fomichev's word2vec C++ library. Ensure that the necessary C++ libraries are installed and properly configured on your system to use this functionality.
-
-To build the required static linked library, use a C++11 compatible compiler and CMake 3.10 or higher. This step is essential before proceeding with the installation and usage of the Golang module.
-
-```bash
-mkdir _build && cd _build
-brew install cmake
-cmake -DCMAKE_BUILD_TYPE=Release ../libw2v
-make
-```
-
-**Note**: The static linked libraries are distributed as binary, download them from [releases](https://github.com/fogfish/word2vec/releases) and extract it to `libw2v` dir.
-
 
 ## Usage Command line utility
 
 You can install application from source code but it requires [Golang](https://go.dev/) to be installed.
 
 ```bash
-go install github.com/fogfish/word2vec/w2v@latest
+go install github.com/kirill-scherba/word2vec/w2v@latest
 ```
 
 ### Training
@@ -163,38 +147,34 @@ w2v lookup \
 
 ## Usage Golang module
 
-The latest version of the module is available at `main` branch. All development, including new features and bug fixes, take place on the `main` branch using forking and pull requests as described in contribution guidelines. The stable version is available via Golang modules.
+This package requires a C++ static library to be built. The process is automated with `go:generate`.
 
-Use `go get` to retrieve the library and add it as dependency to your application.
+### 1. Prerequisites
 
-```bash
-go get -u github.com/fogfish/word2vec
-```
+Ensure you have the following tools installed on your system:
+- A C++11 compatible compiler (e.g., `g++` or `clang++`)
+- `cmake` (version 3.10 or higher)
+- `make`
 
-However, the availability of static library for the target platform (linux, darwin) is the primary requirement. There are two options finishing the installation the module.
+On Debian/Ubuntu, you can install them with: `sudo apt-get install build-essential cmake`
+On Arch Linux: `sudo pacman -S base-devel cmake`
+On macOS (with Homebrew): `xcode-select --install && brew install cmake`
 
-**Option 1: build the library (recommended)**
+### 2. Installation and Build
 
-```bash
-go get -u github.com/fogfish/word2vec
-
-git clone --depth=1 --branch=main https://github.com/fogfish/word2vec word2vec
-cd word2vec && cmake -DCMAKE_BUILD_TYPE=Release libw2v && make && cd ..
-go mod edit -replace github.com/fogfish/word2vec=./word2vec
-```
-
-**Option 2: using the pre-build library**
+First, add the package to your project:
 
 ```bash
-go get -u github.com/fogfish/word2vec
-
-git clone --depth=1 --branch=main https://github.com/fogfish/word2vec word2vec
-cd word2vec/libw2v
-curl -L -O https://github.com/fogfish/word2vec/releases/download/v0.0.0/w2v-0.0.0-Darwin.tar.gz
-tar -zxf w2v-0.0.0-Darwin.tar.gz --strip-components=1
-cd ../..
-go mod edit -replace github.com/fogfish/word2vec=./word2vec
+go get github.com/kirill-scherba/word2vec
 ```
+
+Next, you need to build the C++ dependency. This is a **one-time step** that you perform from your project's root directory. The command finds the package in your module cache and runs the build script inside it.
+
+```bash
+go generate $(go list -m -f '{{.Dir}}' github.com/kirill-scherba/word2vec)/...
+```
+
+After this, you can use the package in your Go code as usual. The Go toolchain will automatically find and link the compiled C++ library.
 
 ### Embeddings
 
