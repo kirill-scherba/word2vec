@@ -9,6 +9,7 @@
 #ifndef WORD2VEC_WORD2VEC_HPP
 #define WORD2VEC_WORD2VEC_HPP
 
+#include <cstdint>
 #include <cassert>
 #include <string>
 #include <vector>

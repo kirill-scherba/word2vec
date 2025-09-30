@@ -8,9 +8,11 @@
 
 package trainer
 
+//go:generate sh ../build.sh
+
 /*
 #cgo CFLAGS: -I../libw2v/include
-#cgo LDFLAGS: -L . -lw2v
+#cgo LDFLAGS: -L../libw2v/lib -lw2v -lstdc++ -lm
 #include <stdlib.h>
 #include "w2v.h"
 */
