@@ -10,6 +10,7 @@
 #define WORD2VEC_HUFFMANTREE_H
 
 #include <memory>
+#include <vector>
 
 namespace w2v {
     /**
