@@ -12,7 +12,7 @@ import (
 // CleanWord converts a word to lower case and removes punctuation and symbols.
 func CleanWord(word string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsPunct(r) || unicode.IsSymbol(r) {
+		if unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsNumber(r) {
 			return -1
 		}
 		return unicode.ToLower(r)

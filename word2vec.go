@@ -125,10 +125,47 @@ func (m *Model) Lookup(query string, seq []Nearest) error {
 
 	distances := make([]Nearest, 0, len(m.words))
 	for i, w := range m.words {
+		// Exclude the query word itself from the results
 		if i == queryIdx {
 			continue
 		}
 		dist := libw2v.Dot(queryVector, m.vectors[i])
+		distances = append(distances, Nearest{Word: w, Distance: dist})
+	}
+
+	sort.Slice(distances, func(i, j int) bool {
+		return distances[i].Distance > distances[j].Distance
+	})
+
+	for i := 0; i < len(seq) && i < len(distances); i++ {
+		seq[i] = distances[i]
+	}
+
+	return nil
+}
+
+// NearestToVector finds the most similar words in the model for a given vector.
+// The `exclude` map can be used to ignore certain words in the result.
+func (m *Model) NearestToVector(vector []float32, seq []Nearest, exclude map[string]bool) error {
+	if len(vector) != m.vectorSize {
+		return errors.New("vector size does not match model's vector size")
+	}
+
+	if exclude == nil {
+		exclude = make(map[string]bool)
+	}
+
+	// Normalize the input vector to ensure cosine similarity calculation is correct.
+	libw2v.Normalize(vector)
+
+	distances := make([]Nearest, 0, len(m.words))
+	for i, w := range m.words {
+		// Skip excluded words
+		if exclude[w] {
+			continue
+		}
+
+		dist := libw2v.Dot(vector, m.vectors[i])
 		distances = append(distances, Nearest{Word: w, Distance: dist})
 	}
 
