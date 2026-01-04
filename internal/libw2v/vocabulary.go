@@ -6,6 +6,7 @@ package libw2v
 
 import (
 	"io"
+	"log"
 	"sort"
 )
 
@@ -20,6 +21,7 @@ type VocabWord struct {
 type Vocabulary struct {
 	words      []VocabWord
 	wordMap    map[string]int
+	stemMap    map[string]string // Maps stem to most frequent original word
 	trainWords int64
 }
 
@@ -28,8 +30,12 @@ type Vocabulary struct {
 // and sorts the vocabulary by frequency.
 func NewVocabulary(reader *WordReader, settings TrainSettings) (*Vocabulary, error) {
 	freqMap := make(map[string]int64)
+	stemToOriginal := make(map[string]map[string]int64) // stem -> {original_word -> count}
 	trainWords := int64(0)
 
+	if settings.Lemmatize {
+		log.Println("Stemming enabled for Russian text.")
+	}
 	// 1. Read the corpus and count word frequencies.
 	for {
 		word, err := reader.ReadWord()
@@ -39,7 +45,21 @@ func NewVocabulary(reader *WordReader, settings TrainSettings) (*Vocabulary, err
 		if err != nil {
 			return nil, err
 		}
+
+		originalWord := word
+		if settings.Lemmatize {
+			word = Stem(word)
+		}
+
 		freqMap[word]++
+
+		if settings.Lemmatize {
+			if _, ok := stemToOriginal[word]; !ok {
+				stemToOriginal[word] = make(map[string]int64)
+			}
+			stemToOriginal[word][originalWord]++
+		}
+
 	}
 
 	// 2. Filter words that are less frequent than MinCount.
@@ -62,9 +82,26 @@ func NewVocabulary(reader *WordReader, settings TrainSettings) (*Vocabulary, err
 		wordMap[v.Word] = i
 	}
 
+	// 5. Create the final stem-to-most-frequent-word map.
+	stemMap := make(map[string]string)
+	if settings.Lemmatize {
+		for stem, originals := range stemToOriginal {
+			var maxCount int64 = 0
+			mostFrequent := ""
+			for original, count := range originals {
+				if count > maxCount {
+					maxCount = count
+					mostFrequent = original
+				}
+			}
+			stemMap[stem] = mostFrequent
+		}
+	}
+
 	return &Vocabulary{
 		words:      vocabWords,
 		wordMap:    wordMap,
+		stemMap:    stemMap,
 		trainWords: trainWords,
 	}, nil
 }
@@ -77,4 +114,9 @@ func (v *Vocabulary) Words() []VocabWord {
 // Len returns the number of unique words in the vocabulary.
 func (v *Vocabulary) Len() int {
 	return len(v.words)
+}
+
+// StemMap returns the map of stems to their most frequent original word.
+func (v *Vocabulary) StemMap() map[string]string {
+	return v.stemMap
 }

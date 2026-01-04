@@ -48,4 +48,6 @@ type TrainSettings struct {
 	NumEpochs int
 	// Flag for verbose output.
 	Verbose bool
+	// Flag for Russian lemmatization.
+	Lemmatize bool
 }

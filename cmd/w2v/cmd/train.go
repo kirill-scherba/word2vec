@@ -28,6 +28,7 @@ var (
 	negativeSamples int
 	useHS           bool
 	verbose         bool
+	lemmatize       bool
 )
 
 var trainCmd = &cobra.Command{
@@ -52,6 +53,7 @@ func init() {
 	trainCmd.Flags().IntVarP(&negativeSamples, "negative", "", 5, "Number of negative examples (0 = not used)")
 	trainCmd.Flags().BoolVarP(&useHS, "hs", "", false, "Use Hierarchical Softmax")
 	trainCmd.Flags().BoolVarP(&verbose, "verbose", "", true, "Enable verbose output")
+	trainCmd.Flags().BoolVarP(&lemmatize, "lemmatize", "l", false, "Use lemmatization for Russian text")
 	trainCmd.MarkFlagRequired("train")
 }
 
@@ -75,6 +77,7 @@ func runTrain(cmd *cobra.Command, args []string) {
 		SubsamplingThreshold: float32(subsample),
 		NegativeSamples:      negativeSamples,
 		Verbose:              verbose,
+		Lemmatize:            lemmatize,
 	}
 	if useCbow {
 		settings.Architecture = libw2v.CBOW
@@ -100,7 +103,7 @@ func runTrain(cmd *cobra.Command, args []string) {
 		if err != nil {
 			log.Fatalf("Failed to create output file: %v", err)
 		}
-		err = libw2v.SaveModel(model, trainer.Vocab(), f)
+		err = libw2v.SaveModel(model, trainer.Vocab(), lemmatize, f)
 		if err != nil {
 			log.Fatalf("Failed to save model: %v", err)
 		}

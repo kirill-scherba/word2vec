@@ -9,7 +9,6 @@ import (
 	"log"
 
 	"github.com/kirill-scherba/word2vec"
-	"github.com/kirill-scherba/word2vec/internal/libw2v"
 	"github.com/spf13/cobra"
 )
 
@@ -51,8 +50,7 @@ func runAnalogy(cmd *cobra.Command, args []string) {
 	vecs := make([][]float32, 3)
 	for i, word := range analogyWords {
 		vecs[i] = make([]float32, m.Size())
-		cleanedWord := libw2v.CleanWord(word)
-		if err := m.VectorOf(cleanedWord, vecs[i]); err != nil {
+		if err := m.VectorOf(word, vecs[i]); err != nil {
 			log.Fatalf("Failed to get vector for word '%s': %v", word, err)
 		}
 	}
@@ -67,7 +65,8 @@ func runAnalogy(cmd *cobra.Command, args []string) {
 	// We exclude the original words used in the analogy.
 	exclude := make(map[string]bool)
 	for _, word := range analogyWords {
-		exclude[libw2v.CleanWord(word)] = true
+		// The public API of the model handles stemming, so we just pass the raw word.
+		exclude[m.ProcessWord(word)] = true
 	}
 
 	// Find the nearest words to the resulting vector
