@@ -35,7 +35,7 @@ The project provides both a CLI tool and a library.
 
 ### Command-Line Interface
 
-The `w2v` executable has four main subcommands: `train`, `distance`, `embedding`, and `analogy`. You can get help for any command by adding the `--help` flag.
+The `w2v` executable has five main subcommands: `train`, `distance`, `embedding`, `analogy`, and `similarity`. You can get help for any command by adding the `--help` flag.
 
 #### 1. Train a model (`train`)
 

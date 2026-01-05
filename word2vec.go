@@ -132,6 +132,27 @@ func (m *Model) Embedding(doc string, vector []float32) error {
 	return nil
 }
 
+// Similarity calculates the cosine similarity between two documents.
+// A score of 1 means the texts are very similar, and a score of -1 means they are very dissimilar.
+func (m *Model) Similarity(doc1, doc2 string) (float32, error) {
+	vec1 := make([]float32, m.vectorSize)
+	if err := m.Embedding(doc1, vec1); err != nil {
+		return 0, fmt.Errorf("failed to get embedding for doc1: %w", err)
+	}
+
+	vec2 := make([]float32, m.vectorSize)
+	if err := m.Embedding(doc2, vec2); err != nil {
+		return 0, fmt.Errorf("failed to get embedding for doc2: %w", err)
+	}
+
+	// The vectors from Embedding are averaged, so we need to re-normalize them
+	// before calculating the dot product to get the cosine similarity.
+	libw2v.Normalize(vec1)
+	libw2v.Normalize(vec2)
+
+	return libw2v.Dot(vec1, vec2), nil
+}
+
 // Nearest represents a word and its similarity score.
 type Nearest struct {
 	Word     string
