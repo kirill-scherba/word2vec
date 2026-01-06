@@ -16,7 +16,7 @@ import (
 type TrainConfig = libw2v.TrainSettings
 
 // Train starts the model training process based on the provided configuration.
-func Train(config TrainConfig, trainFile, outFile string, lemmatize bool) (err error) {
+func Train(config TrainConfig, trainFile, outFile string) (err error) {
 
 	// Check if output file is specified
 	if outFile == "" {
@@ -40,7 +40,7 @@ func Train(config TrainConfig, trainFile, outFile string, lemmatize bool) (err e
 		err = fmt.Errorf("Failed to create output file: %v", err)
 		return
 	}
-	err = libw2v.SaveModel(model, trainer.Vocab(), lemmatize, f)
+	err = libw2v.SaveModel(model, trainer.Vocab(), config.Lemmatize, f)
 	if err != nil {
 		err = fmt.Errorf("Failed to save model: %v", err)
 		return

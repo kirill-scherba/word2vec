@@ -68,6 +68,7 @@ func runTrain(cmd *cobra.Command, args []string) {
 		defer pprof.StopCPUProfile()
 	}
 
+	// Train config
 	settings := word2vec.TrainConfig{
 		VectorSize:           vectorSize,
 		WindowSize:           windowSize,
@@ -92,26 +93,8 @@ func runTrain(cmd *cobra.Command, args []string) {
 		settings.LossFunction = libw2v.NegativeSampling
 	}
 
-	// trainer, err := libw2v.NewTrainer(settings, trainFile)
-	// if err != nil {
-	// 	log.Fatalf("Failed to initialize trainer: %v", err)
-	// }
-
-	// model := trainer.Train()
-
-	// if outFile != "" {
-	// 	f, err := os.Create(outFile)
-	// 	if err != nil {
-	// 		log.Fatalf("Failed to create output file: %v", err)
-	// 	}
-	// 	err = libw2v.SaveModel(model, trainer.Vocab(), lemmatize, f)
-	// 	if err != nil {
-	// 		log.Fatalf("Failed to save model: %v", err)
-	// 	}
-	// 	log.Printf("Model saved to %s", outFile)
-	// }
-
-	err := word2vec.Train(settings, trainFile, outFile, lemmatize)
+	// Train
+	err := word2vec.Train(settings, trainFile, outFile)
 	if err != nil {
 		log.Fatalf("Failed to train model: %v", err)
 	}
