@@ -33,22 +33,28 @@ type Trainer struct {
 	// Atomic counters for tracking progress across goroutines.
 	wordCountActual *atomic.Int64
 	alpha           *atomic.Uint32 // Stored as float32 bits
+	bytesRead       *atomic.Int64  // Track bytes read for progress
+	done            chan struct{}  // Channel to signal completion
 }
 
 // NewTrainer sets up a new training session.
 func NewTrainer(settings TrainSettings, trainFile string) (*Trainer, error) {
-	// Step 1: Build Vocabulary
-	reader, err := NewWordReader(trainFile)
+
+	// Step 0: Create word reader
+	reader, err := NewWordReaderFromPath(trainFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create word reader: %w", err)
 	}
 	defer reader.Close()
 
+	// Step 1: Build Vocabulary
+	if settings.Verbose {
+		log.Printf("Build Vocabulary...\n")
+	}
 	vocab, err := NewVocabulary(reader, settings)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build vocabulary: %w", err)
 	}
-
 	if settings.Verbose {
 		log.Printf("Vocabulary size: %d\n", vocab.Len())
 		log.Printf("Words in train file: %d\n", vocab.trainWords)
@@ -85,6 +91,8 @@ func NewTrainer(settings TrainSettings, trainFile string) (*Trainer, error) {
 		expTable:        expTable,
 		wordCountActual: &atomic.Int64{},
 		alpha:           &atomic.Uint32{},
+		bytesRead:       &atomic.Int64{},
+		done:            make(chan struct{}),
 	}, nil
 }
 
@@ -96,25 +104,82 @@ func (t *Trainer) Train() *Model {
 		log.Println("Starting training...")
 	}
 
-	var wg sync.WaitGroup
-	for i := 0; i < t.settings.NumThreads; i++ {
-		wg.Add(1)
-		go t.trainWorker(i, &wg)
-	}
+	var workerWg sync.WaitGroup
+	// Workers are now started inside produceSentences
 
 	// Progress reporting thread
 	if t.settings.Verbose {
-		wg.Add(1)
-		go t.reportProgress(&wg)
-	}
+		var reporterWg sync.WaitGroup
+		reporterWg.Add(1)
+		go t.reportProgress(&reporterWg)
 
-	wg.Wait()
+		// Wait for training workers to finish, then signal the reporter to stop.
+		t.produceSentences(&workerWg) // This will block until all epochs are done
+		close(t.done)
+		reporterWg.Wait()
+	} else {
+		// If not verbose, just wait for workers to finish.
+		t.produceSentences(&workerWg)
+	}
 
 	if t.settings.Verbose {
 		log.Println("\nTraining finished.")
 	}
 
 	return t.model
+}
+
+// produceSentences is the single producer goroutine. It reads the training file
+// and sends sentences (slices of word indices) to the worker goroutines via a channel.
+func (t *Trainer) produceSentences(wg *sync.WaitGroup) {
+	sentenceChan := make(chan []int, t.settings.NumThreads*2)
+
+	// Start consumer goroutines (the workers)
+	for i := 0; i < t.settings.NumThreads; i++ {
+		wg.Add(1)
+		go t.trainWorker(i, wg, sentenceChan)
+	}
+
+	// Start producing sentences for each epoch
+	for epoch := 0; epoch < t.settings.NumEpochs; epoch++ {
+		reader, err := NewWordReaderFromPath(t.trainFile)
+		if err != nil {
+			log.Printf("Epoch %d: failed to open training file: %v", epoch, err)
+			break // Stop if we can't read the file
+		}
+
+		sentence := make([]int, 0, 1000)
+		var lastPos int64
+		for {
+			wordStr, _, err := reader.ReadWord()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Printf("Epoch %d: error reading word: %v", epoch, err)
+				break
+			}
+			pos, err := reader.Pos()
+			if err != nil {
+				log.Printf("Epoch %d: error getting position: %v", epoch, err)
+				break
+			}
+			t.bytesRead.Add(pos - lastPos)
+			lastPos = pos
+
+			if wordIndex, exists := t.vocab.wordMap[wordStr]; exists {
+				sentence = append(sentence, wordIndex)
+			}
+
+			if len(sentence) >= 1000 {
+				sentenceChan <- sentence
+				sentence = make([]int, 0, 1000)
+			}
+		}
+		reader.Close()
+	}
+	close(sentenceChan) // Close channel to signal workers there's no more work
+	wg.Wait()           // Wait for all workers to finish processing
 }
 
 // Vocab returns the vocabulary used by the trainer.
@@ -125,114 +190,80 @@ func (t *Trainer) Vocab() *Vocabulary {
 // reportProgress periodically logs the training progress.
 func (t *Trainer) reportProgress(wg *sync.WaitGroup) {
 	defer wg.Done()
-	totalWords := t.vocab.trainWords * int64(t.settings.NumEpochs)
+	fileSize, err := GetFileSize(t.trainFile)
+	if err != nil {
+		log.Printf("Error getting file size for progress reporting: %v", err)
+		return
+	}
+	totalBytesToProcess := fileSize * int64(t.settings.NumEpochs)
 	startTime := time.Now()
 
-	for {
-		currentCount := t.wordCountActual.Load()
-		if currentCount >= totalWords {
-			return
+	ticker := time.NewTicker(1000 * time.Millisecond)
+	defer ticker.Stop()
+
+	printLine := func(final bool) {
+		bytes := t.bytesRead.Load()
+		progress := float64(bytes) / float64(totalBytesToProcess) * 100
+		if progress > 100 {
+			progress = 100
 		}
 
-		progress := float64(currentCount) / float64(totalWords) * 100
-		alpha := math.Float32frombits(t.alpha.Load())
+		currentAlpha := math.Float32frombits(t.alpha.Load())
 		elapsed := time.Since(startTime).Seconds()
-		wps := float64(currentCount) / elapsed
+		wps := float64(t.wordCountActual.Load()) / elapsed
 
-		log.Printf("\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk", alpha, progress, wps/1000)
+		format := "\rAlpha: %f  Progress: %.2f%%  Words/sec: %.2fk"
+		if final {
+			format += "\n"
+		}
+		log.Printf(format, currentAlpha, progress, wps/1000)
+	}
 
-		time.Sleep(1 * time.Second)
+	for {
+		select {
+		case <-t.done:
+			// Training is complete, do one final print and exit.
+			printLine(true)
+			return
+		case <-ticker.C:
+			// Update learning rate (alpha) based on the actual progress.
+			bytes := t.bytesRead.Load()
+			currentAlpha := t.settings.LearningRate * (1.0 - float32(bytes)/float32(totalBytesToProcess+1))
+			if currentAlpha < t.settings.LearningRate*0.0001 {
+				currentAlpha = t.settings.LearningRate * 0.0001
+			}
+			t.alpha.Store(math.Float32bits(currentAlpha))
+			printLine(false)
+		}
 	}
 }
 
 // trainWorker is the main function for each training thread (goroutine).
-func (t *Trainer) trainWorker(id int, wg *sync.WaitGroup) {
+func (t *Trainer) trainWorker(id int, wg *sync.WaitGroup, sentenceChan <-chan []int) {
 	defer wg.Done()
-
-	// Each worker needs its own file reader.
-	reader, err := NewWordReader(t.trainFile)
-	if err != nil {
-		log.Printf("Worker %d: failed to open training file: %v", id, err)
-		return
-	}
-	defer reader.Close()
 
 	// Each goroutine gets its own random number generator to avoid lock contention.
 	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id)))
 
 	// Allocate a buffer for gradient updates once per worker.
 	neu1e := make([]float32, t.settings.VectorSize)
-
-	sentence := make([]int, 0, 1000)
 	localWordCount := int64(0)
-	totalWords := t.vocab.trainWords * int64(t.settings.NumEpochs)
 
-	for epoch := 0; epoch < t.settings.NumEpochs; epoch++ {
-		// Each worker processes a chunk of the file.
-		fileSize := reader.totalBytes
-		startOffset := fileSize / int64(t.settings.NumThreads) * int64(id)
-		if _, err := reader.Seek(startOffset, io.SeekStart); err != nil {
-			log.Printf("Worker %d: failed to seek in training file: %v", id, err)
-			return
-		}
-
-		for {
-			wordStr, err := reader.ReadWord()
-			if err == io.EOF {
-				break
-			}
-			if err != nil && err != io.EOF {
-				log.Printf("Worker %d: error reading word: %v", id, err)
-				break
-			}
-
-			wordIndex, exists := t.vocab.wordMap[wordStr]
-			if !exists {
-				continue // Word not in vocabulary
-			}
-
-			// Subsampling
-			if t.settings.SubsamplingThreshold > 0 {
-				word := &t.vocab.words[wordIndex]
-				if !t.sampler.ShouldSubsample(word, t.vocab.trainWords, t.settings.SubsamplingThreshold) {
-					continue
-				}
-			}
-
-			sentence = append(sentence, wordIndex)
-
-			// Process sentence when buffer is full or at end of file.
-			// A simple heuristic: process at the end of a "sentence" (e.g., newline).
-			// The original code processes per line. Here we use a fixed buffer size for simplicity.
-			if len(sentence) >= 1000 {
-				t.processSentence(sentence, &localWordCount, totalWords, rng, neu1e)
-				sentence = sentence[:0] // Clear sentence buffer
-			}
-		}
-		// Process any remaining words in the buffer
-		if len(sentence) > 0 {
-			t.processSentence(sentence, &localWordCount, totalWords, rng, neu1e)
-			sentence = sentence[:0]
-		}
+	// Consume sentences from the channel until it's closed
+	for sentence := range sentenceChan {
+		t.processSentence(sentence, &localWordCount, rng, neu1e)
 	}
 }
 
 // processSentence runs the training algorithm on a single sentence.
-func (t *Trainer) processSentence(sentence []int, localWordCount *int64, totalWords int64, rng *rand.Rand, neu1e []float32) {
+func (t *Trainer) processSentence(sentence []int, localWordCount *int64, rng *rand.Rand, neu1e []float32) {
 	alpha := math.Float32frombits(t.alpha.Load())
 
 	for pos, wordIndex := range sentence {
 		// Update learning rate
-		if *localWordCount%10000 == 0 {
-			globalCount := t.wordCountActual.Add(10000)
-			currentAlpha := t.settings.LearningRate * (1.0 - float32(globalCount)/float32(totalWords+1))
-			if currentAlpha < t.settings.LearningRate*0.0001 {
-				currentAlpha = t.settings.LearningRate * 0.0001
-			}
-			t.alpha.Store(math.Float32bits(currentAlpha))
-			alpha = currentAlpha
-		}
-
+		// The learning rate is now updated centrally by the progress reporter
+		// to prevent race conditions and ensure smooth decay.
+		alpha = math.Float32frombits(t.alpha.Load())
 		// Generate random window size
 		b := rng.Intn(t.settings.WindowSize)
 
@@ -273,6 +304,7 @@ func (t *Trainer) processSentence(sentence []int, localWordCount *int64, totalWo
 			}
 		}
 		*localWordCount++
+		t.wordCountActual.Add(1) // Increment the global counter for each processed word
 	}
 }
 

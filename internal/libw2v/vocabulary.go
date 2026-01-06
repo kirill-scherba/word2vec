@@ -38,7 +38,7 @@ func NewVocabulary(reader *WordReader, settings TrainSettings) (*Vocabulary, err
 	}
 	// 1. Read the corpus and count word frequencies.
 	for {
-		word, err := reader.ReadWord()
+		word, _, err := reader.ReadWord()
 		if err == io.EOF {
 			break
 		}
