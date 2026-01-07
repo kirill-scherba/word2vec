@@ -10,6 +10,7 @@ package word2vec
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -29,17 +30,26 @@ type Model struct {
 
 // Load reads a pre-trained model from the specified file path.
 func Load(modelFile string) (*Model, error) {
+
+	// Open the model file
 	file, err := os.Open(modelFile)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	words, vectors, lemmatized, stemMap, err := libw2v.LoadModel(file)
+	// Load the model using the reader
+	return LoadReader(file)
+}
+
+// LoadReader reads a pre-trained model from the specified reader.
+func LoadReader(r io.Reader) (*Model, error) {
+
+	// Load model
+	words, vectors, lemmatized, stemMap, err := libw2v.LoadModel(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load model data: %w", err)
 	}
-
 	if len(vectors) == 0 {
 		return nil, errors.New("model is empty")
 	}
@@ -55,6 +65,7 @@ func Load(modelFile string) (*Model, error) {
 		libw2v.Normalize(vectors[i])
 	}
 
+	// Return the loaded model
 	return &Model{
 		words:      words,
 		vectors:    vectors,
