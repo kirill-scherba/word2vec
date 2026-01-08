@@ -15,3 +15,13 @@ func Dot(v1, v2 []float32) float32 {
 func Normalize(v []float32) {
 	libw2v.Normalize(v)
 }
+
+// IsStopWord checks if a word is a stop word (currently for Russian).
+func IsStopWord(word string) bool {
+	return libw2v.IsStopWord(word)
+}
+
+// CleanWord converts a word to lower case and removes punctuation and symbols.
+func CleanWord(word string) string {
+	return libw2v.CleanWord(word)
+}

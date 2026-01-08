@@ -47,6 +47,13 @@ func NewVocabulary(reader *WordReader, settings TrainSettings) (*Vocabulary, err
 		}
 
 		originalWord := word
+
+		// Skip stop words
+		if IsStopWord(originalWord) {
+			continue
+		}
+
+		// Clean and stem the word
 		if settings.Lemmatize {
 			word = Stem(word)
 		}

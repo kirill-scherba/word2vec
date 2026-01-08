@@ -100,6 +100,18 @@ func (m *Model) processWord(word string) string {
 	return cleaned
 }
 
+// OriginalWord returns the original (most frequent) word for a given stem.
+// If the model was not trained with lemmatization or the stem is not found,
+// it returns the input stem itself.
+func (m *Model) OriginalWord(stem string) string {
+	if m.lemmatized && m.stemMap != nil {
+		if original, ok := m.stemMap[stem]; ok {
+			return original
+		}
+	}
+	return stem
+}
+
 // VectorOf calculates the embedding vector for a single input word.
 func (m *Model) VectorOf(word string, vector []float32) error {
 	processedWord := m.ProcessWord(word)
